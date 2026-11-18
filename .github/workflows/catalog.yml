@@ -1,0 +1,73 @@
+name: Build branded catalog
+on:
+  push:
+    paths:
+      - '.github/workflows/catalog.yml'
+permissions:
+  contents: write
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pymupdf reportlab pillow
+      - run: |
+          python - <<'PY'
+          import fitz,io
+          from reportlab.pdfgen import canvas
+          from reportlab.pdfbase import pdfmetrics
+          from reportlab.pdfbase.ttfonts import TTFont
+          from reportlab.lib.colors import HexColor
+          from reportlab.lib.utils import ImageReader
+          from PIL import Image,ImageOps
+          pdfmetrics.registerFont(TTFont('D','/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
+          pdfmetrics.registerFont(TTFont('DB','/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
+          W,H=960,540
+          p=fitz.open('assets/a8.pdf')
+          out=fitz.open()
+          def layer(i):
+              b=io.BytesIO(); c=canvas.Canvas(b,pagesize=(W,H))
+              def rect(x,y,w,h,col):
+                  c.setFillColor(HexColor(col)); c.rect(x,H-y-h,w,h,fill=1,stroke=0)
+              def txt(x,y,t,size=12,col='#edf2f4',font='D'):
+                  c.setFillColor(HexColor(col)); c.setFont(font,size); c.drawString(x,H-y,t)
+              def logo(x,y,k):
+                  c.saveState(); c.translate(x,H-y); c.scale(k,-k)
+                  for pts in [[(4,53),(31,5),(44,5),(20,49)],[(45,7),(60,32),(48,36),(38,18)],[(53,41),(65,37),(77,54),(63,54)]]:
+                      a=c.beginPath(); a.moveTo(*pts[0])
+                      for z in pts[1:]: a.lineTo(*z)
+                      a.close(); c.setFillColor(HexColor('#edf2f4')); c.drawPath(a,fill=1,stroke=0)
+                  a=c.beginPath(); a.moveTo(1,59); a.curveTo(22,34,48,25,79,29); a.curveTo(49,30,25,43,1,59); a.close(); c.setFillColor(HexColor('#42e4dc')); c.drawPath(a,fill=1,stroke=0); c.restoreState()
+              if i==0:
+                  rect(0,0,W,H,'#05090c')
+                  im=ImageOps.fit(Image.open('assets/a2.jpg').convert('RGB'),(727,615))
+                  c.drawImage(ImageReader(im),435,55,485,410)
+                  logo(40,25,.85); txt(120,52,'AURORA SHIELD',24,font='DB'); txt(120,70,'PREMIUM AUTOMOTIVE FILMS',9,'#42e4dc')
+                  txt(40,155,'КАТАЛОГ / 2026',14,'#42e4dc','DB'); txt(40,222,'Совершенство',43); txt(40,277,'под защитой.',43)
+                  txt(40,330,'Премиальные автомобильные плёнки',16); txt(40,360,'PPF  /  Цветные TPU  /  Тонировка',14,'#a4c3c7'); txt(40,475,'ПРОФЕССИОНАЛЬНАЯ СЕРИЯ',11,'#42e4dc','DB')
+              else:
+                  rect(0,0,W,52,'#05090c'); logo(40,9,.57); txt(91,26,'AURORA SHIELD',15,font='DB'); txt(91,40,'PREMIUM AUTOMOTIVE FILMS',7,'#42e4dc')
+                  txt(630,31,p[i].get_text().splitlines()[0].split('•')[-1].strip(),12,'#42e4dc','DB')
+              c.showPage(); c.save(); return fitz.open(stream=b.getvalue(),filetype='pdf')
+          for i in range(len(p)):
+              d=layer(i)
+              if i==0: out.insert_pdf(d)
+              else:
+                  out.insert_pdf(p,from_page=i,to_page=i)
+                  out[-1].show_pdf_page(out[-1].rect,d,0)
+          out.set_metadata({'title':'AURORA SHIELD — Каталог 2026','author':'AURORA SHIELD'})
+          out.save('assets/catalog-2026.pdf',garbage=4,deflate=True)
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text().replace('href="assets/a8.pdf"','href="assets/catalog-2026.pdf"')
+          s=s.replace('Смотреть продукцию</a></div>','Смотреть продукцию</a><a class="btn outline" href="assets/catalog-2026.pdf" download>Скачать каталог PDF</a></div>',1)
+          p.write_text(s)
+          PY
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/catalog-2026.pdf index.html
+          git commit -m "Publish branded PDF catalog"
+          git push
