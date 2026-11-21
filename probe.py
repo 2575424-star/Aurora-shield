@@ -24,9 +24,9 @@ async def probe_one(source: str, url: str) -> dict:
         soup = BeautifulSoup(response.text, "html.parser")
         links = {a.get("href", "").split("?")[0] for a in soup.find_all("a", href=True)}
         if source == "avito":
-            matches = [u for u in links if re.search(r"/kvartiry/[^/]+_\\d+$", u)]
+            matches = [u for u in links if re.search(r"/kvartiry/[^/]+_[0-9]+$", u)]
         else:
-            matches = [u for u in links if re.search(r"/rent/flat/\\d+", u)]
+            matches = [u for u in links if re.search(r"/rent/flat/[0-9]+", u)]
         result["listing_links"] = len(matches)
         result["status"] = "listing_links_found" if matches else "html_received_no_listing_links"
         result["html_bytes"] = len(response.content)
