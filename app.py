@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from statistics import median
 from typing import Literal
 from fastapi import FastAPI, HTTPException, Query, Header, Depends
+from probe import run_probe
+import asyncio
+import time
 from pydantic import BaseModel, Field, HttpUrl
 
 app = FastAPI(title="Realty Monitor", version="0.1.0")
@@ -105,3 +108,33 @@ def stats():
         total=db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
         changes=db.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
     return {"listings":total,"price_observations":changes}
+
+
+probe_results = {"state": "not_started", "results": []}
+probe_last_run = 0.0
+
+@app.on_event("startup")
+async def startup_probe():
+    asyncio.create_task(refresh_probe())
+
+async def refresh_probe():
+    global probe_results, probe_last_run
+    probe_last_run = time.monotonic()
+    probe_results = {"state": "running", "results": []}
+    try:
+        results = await run_probe()
+        probe_results = {"state": "completed", "results": results}
+        print("PARSER_PROBE_RESULTS", probe_results, flush=True)
+    except Exception as exc:
+        probe_results = {"state": "failed", "error": type(exc).__name__}
+
+@app.get("/probe/status")
+async def probe_status():
+    return probe_results
+
+@app.get("/probe/run")
+async def probe_run():
+    if time.monotonic() - probe_last_run < 60:
+        return {"message": "Rate limited; use /probe/status", **probe_results}
+    await refresh_probe()
+    return probe_results
