@@ -4,11 +4,16 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from statistics import median
 from typing import Literal
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Header, Depends
 from pydantic import BaseModel, Field, HttpUrl
 
 app = FastAPI(title="Realty Monitor", version="0.1.0")
 DB = os.getenv("DATABASE_PATH", "realty.db")
+API_KEY = os.getenv("REALTY_API_KEY")
+
+def require_key(x_api_key: str | None = Header(default=None)):
+    if not API_KEY or x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Valid X-API-Key required")
 
 @contextmanager
 def connect():
@@ -50,7 +55,7 @@ def health():
     return {"status": "ok", "ingestion": "manual_or_external_only"}
 
 @app.post("/listings")
-def upsert(item: Listing):
+def upsert(item: Listing, _auth: None = Depends(require_key)):
     now = datetime.now(timezone.utc).isoformat()
     data = item.model_dump(mode="json")
     with connect() as db:
