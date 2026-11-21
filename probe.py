@@ -20,13 +20,20 @@ async def probe_one(browser, source, url):
         result["http_status"] = response.status if response else None
         result["final_host"] = urlparse(page.url).hostname
         result["title"] = (await page.title())[:120]
+        body_text = (await page.locator("body").inner_text(timeout=10000))[:5000]
+        lowered = body_text.casefold()
+        indicators = ["captcha", "капча", "доступ ограничен", "подтвердите", "проверка", "робот", "javascript", "временно недоступ", "access denied", "необычная активность"]
+        result["page_indicators"] = [w for w in indicators if w in lowered]
+        result["body_excerpt"] = re.sub(r"\\s+", " ", body_text)[:350]
+        result["anchor_count"] = await page.locator("a[href]").count()
+        result["final_url_path"] = urlparse(page.url).path
         links = await page.locator("a[href]").evaluate_all("(nodes) => nodes.map(n => n.href)")
         if source == "avito":
             matches = [u for u in links if re.search(r"/kvartiry/[^/]+_[0-9]+(?:[?#]|$)",u)]
         else:
             matches = [u for u in links if re.search(r"/rent/flat/[0-9]+",u)]
         result["listing_links"] = len(set(matches))
-        result["status"] = "listing_links_found" if matches else ("http_error_or_blocked" if result["http_status"] != 200 else "no_listing_links")
+        result["status"] = "listing_links_found" if matches else ("http_error_or_blocked" if result["http_status"] != 200 else ("suspected_challenge" if result["page_indicators"] else "no_listing_links"))
         result["html_bytes"] = len((await page.content()).encode())
     except Exception as exc:
         result["status"] = "browser_failed"
